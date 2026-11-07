@@ -1,0 +1,23 @@
+# Build outputs and previous portable releases
+/release/
+/release-*/
+/preview/
+*.exe
+*.dll
+*.pdb
+*.zip
+bin/
+obj/
+
+# Local development and diagnostic artifacts
+/PROGRESS.md
+.vs/
+.idea/
+*.user
+*.suo
+*.etl
+*.png
+/tests/*report*.json
+/tests/broker-providers.txt
+.env
+.env.*
