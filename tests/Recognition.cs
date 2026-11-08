@@ -3,19 +3,22 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Windows.Forms;
+using System.Runtime.InteropServices;
 using SafeDetach;
 class Recognition {
+ [DllImport("kernel32.dll",SetLastError=true)] static extern bool VirtualProtect(IntPtr address,UIntPtr length,uint protect,out uint oldProtect);
  [STAThread] static int Main(string[] args) {
   if(args.Length>0&&args[0]=="fixture") {
    using(var mapped=MemoryMappedFile.CreateFromFile(args[1],FileMode.Open))
    using(var view=mapped.CreateViewAccessor())
    using(var form=new Form {Text=Path.GetFileName(args[1]),WindowState=FormWindowState.Minimized,ShowInTaskbar=false}) {
+    uint previous;if(!VirtualProtect(IntPtr.Add(view.SafeMemoryMappedViewHandle.DangerousGetHandle(),65536),(UIntPtr)65536,2,out previous))throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
     form.Shown+=delegate {Console.WriteLine("READY");Console.Out.Flush();};Application.Run(form);
    }return 0;
   }
   string path=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"SafeDetach-识别-"+Guid.NewGuid().ToString("N")+".jpg");Process holder=null;
   try {
-   File.WriteAllBytes(path,new byte[4096]);
+   File.WriteAllBytes(path,new byte[262144]);
    holder=Process.Start(new ProcessStartInfo(typeof(Recognition).Assembly.Location,"fixture \""+path+"\""){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true});
    var ready=holder.StandardOutput.ReadLineAsync();if(!ready.Wait(10000)||ready.Result!="READY")throw new Exception("Fixture startup failed");
    foreach(string mode in new[]{"--mapped","--windows"}) {

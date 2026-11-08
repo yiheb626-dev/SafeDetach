@@ -56,6 +56,7 @@ class ResultRows {
     table.Rows.Clear();if(eject.Text!="安全弹出")throw new Exception("Clearing occupancy must restore safe eject");status.Text="未检测到占用进程。";((Label)typeof(MainWindow).GetField("empty",flags).GetValue(form)).Text="没有检测到占用进程";
     form.Size=form.MinimumSize;form.PerformLayout();using(var bitmap=new Bitmap(form.Width,form.Height)){form.DrawToBitmap(bitmap,new Rectangle(Point.Empty,form.Size));bitmap.Save(System.IO.Path.ChangeExtension(args[0],"empty.png"));}
     setSupport.Invoke(form,new object[]{true,false});form.PerformLayout();
+    var vp=(Panel)typeof(MainWindow).GetField("viewport",flags).GetValue(form);if(vp.AutoScrollPosition!=Point.Empty||vp.HorizontalScroll.Visible||vp.VerticalScroll.Visible)throw new Exception("Minimum window has unnecessary scrolling or shifted content");
     if(!support.Visible||!download.Visible||!retry.Visible||download.Height<24||retry.Height<24)throw new Exception("Npcap actions clipped at minimum window size");
     var noticeBounds=support.RectangleToScreen(support.ClientRectangle);if(!noticeBounds.Contains(download.RectangleToScreen(download.ClientRectangle))||!noticeBounds.Contains(retry.RectangleToScreen(retry.ClientRectangle)))throw new Exception("Npcap actions overflow notice");
     using(var bitmap=new Bitmap(form.Width,form.Height)){form.DrawToBitmap(bitmap,new Rectangle(Point.Empty,form.Size));bitmap.Save(System.IO.Path.ChangeExtension(args[0],"npcap.png"));}

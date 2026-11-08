@@ -17,15 +17,28 @@ namespace SafeDetach {
    var result = new List<ExternalDisk>();
    using(var search = new ManagementObjectSearcher("SELECT * FROM Win32_DiskDrive"))
    using(var disks = search.Get()) foreach(ManagementObject disk in disks) using(disk) {
+    var item=ReadDisk(disk);if(item!=null)result.Add(item);
+   }
+   result.AddRange(EnumeratePortable());return result;
+  }
+  static ExternalDisk ReadDisk(ManagementObject disk) {
     string id = Convert.ToString(disk["PNPDeviceID"]);
     bool external = Convert.ToString(disk["InterfaceType"]) == "USB" || HasUsbAncestor(id);
-    if(!external) continue;
+    if(!external) return null;
     var item = new ExternalDisk { Name=Convert.ToString(disk["Model"]), InstanceId=id, Serial=Convert.ToString(disk["SerialNumber"]), Number=Convert.ToUInt32(disk["Index"]) };
     using(var partitions = disk.GetRelated("Win32_DiskPartition")) foreach(ManagementObject partition in partitions) using(partition)
     using(var volumes = partition.GetRelated("Win32_LogicalDisk")) foreach(ManagementObject volume in volumes) using(volume) item.Drives.Add(Convert.ToString(volume["DeviceID"]));
-    result.Add(item);
-   }
-   using(var search = new ManagementObjectSearcher("SELECT * FROM Win32_PnPEntity WHERE PNPClass='WPD' AND Present=TRUE"))
+    return item;
+  }
+  public static ExternalDisk RefreshTarget(ExternalDisk expected) {
+   string id=expected.InstanceId.Replace("\\","\\\\").Replace("'","\\'");
+   string query=expected.IsPortable?"SELECT Name,PNPDeviceID FROM Win32_PnPEntity WHERE PNPClass='WPD' AND Present=TRUE AND PNPDeviceID='"+id+"'":"SELECT * FROM Win32_DiskDrive WHERE PNPDeviceID='"+id+"'";
+   using(var search=new ManagementObjectSearcher(query))using(var items=search.Get())foreach(ManagementObject item in items)using(item){var current=expected.IsPortable?new ExternalDisk {Name=Convert.ToString(item["Name"]),InstanceId=Convert.ToString(item["PNPDeviceID"]),Serial="",IsPortable=true}:ReadDisk(item);if(current!=null&&current.InstanceId==expected.InstanceId&&current.Serial==expected.Serial)return current;}
+   return null;
+  }
+  public static List<ExternalDisk> EnumeratePortable() {
+   var result=new List<ExternalDisk>();
+   using(var search = new ManagementObjectSearcher("SELECT Name,PNPDeviceID FROM Win32_PnPEntity WHERE PNPClass='WPD' AND Present=TRUE"))
    using(var portable = search.Get()) foreach(ManagementObject device in portable) using(device) {
     string id=Convert.ToString(device["PNPDeviceID"]);
     // Disk volumes also expose WPD nodes. Only add actual USB portable interfaces.

@@ -21,28 +21,30 @@ namespace SafeDetach {
   public static int Run(string[] roots) {
    var mappings=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
    foreach(string root in roots){var target=new StringBuilder(1024);if(QueryDosDevice(root.TrimEnd('\\'),target,target.Capacity)!=0)mappings[target.ToString()]=root.TrimEnd('\\');}
-   int denied=0;
+   int denied=0,fileQueries=0,allocationHits=0;
    foreach(var process in Process.GetProcesses()) using(process) {
     IntPtr handle=OpenProcess(0x410,false,process.Id);if(handle==IntPtr.Zero){denied++;continue;}
     try {
      long created,exit,kernel,user;if(!GetProcessTimes(handle,out created,out exit,out kernel,out user))continue;
      long started=DateTime.FromFileTimeUtc(created).Ticks;string name;try{if(process.StartTime.ToUniversalTime().Ticks!=started)continue;name=process.ProcessName;}catch{continue;}
-     ulong address=0;var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);int size=Marshal.SizeOf(typeof(MemoryInfo));
+     ulong address=0;var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);var allocations=new HashSet<IntPtr>();var file=new StringBuilder(32768);int size=Marshal.SizeOf(typeof(MemoryInfo));
      for(int region=0;region<1000000;region++) {
       MemoryInfo info;if(VirtualQueryEx(handle,new IntPtr((long)address),out info,(UIntPtr)size)==UIntPtr.Zero)break;
       ulong next=(ulong)info.BaseAddress.ToInt64()+info.RegionSize.ToUInt64();if(next<=address||next>long.MaxValue)break;
       if(info.State==0x1000&&(info.Type==0x40000||info.Type==0x1000000)) {
-       var file=new StringBuilder(32768);
-       if(GetMappedFileNameW(handle,info.BaseAddress,file,file.Capacity)>0)foreach(var map in mappings) {
+       if(allocations.Contains(info.AllocationBase)){allocationHits++;address=next;continue;}
+       file.Length=0;fileQueries++;
+       if(GetMappedFileNameW(handle,info.BaseAddress,file,file.Capacity)>0){allocations.Add(info.AllocationBase);foreach(var map in mappings) {
         string path=file.ToString();if(!path.StartsWith(map.Key+"\\",StringComparison.OrdinalIgnoreCase))continue;
         path=map.Value+path.Substring(map.Key.Length);
         if(seen.Add(path)){Console.WriteLine("M\t"+process.Id+"\t"+started+"\t"+HandleScanner.Encode(name)+"\t"+HandleScanner.Encode(path));Console.Out.Flush();}
-       }
+       }}
       }
       address=next;
      }
     }finally{CloseHandle(handle);}
    }
+   if(Environment.GetEnvironmentVariable("SAFEDETACH_STATS")=="1")Console.WriteLine("STATS\tM\t"+fileQueries+"\t"+allocationHits);
    Console.WriteLine("DONE\t0\t"+denied);return 0;
   }
  }

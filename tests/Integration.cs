@@ -28,7 +28,7 @@ class Integration {
    bool ejectRequested=false;
    EjectWorkflow.ReleaseAndEject(new ExternalDisk {Name="fixture"},new[]{new Occupant {Pid=holder.Id,Started=start,Name="fixture"}},delegate(Occupant p){ProcessActions.Terminate(p.Pid,p.Started);},delegate(ExternalDisk d){if(!holder.HasExited)throw new Exception("Eject requested before process exit");using(var released=File.Open(filePath,FileMode.Open,FileAccess.ReadWrite,FileShare.None)){}ejectRequested=true;return "fixture-eject";});
    if(!ejectRequested||!holder.WaitForExit(5000))throw new Exception("Termination/eject workflow failed");Console.WriteLine("PASS: force-eject fixture termination and file release before eject request");
-   foreach(var disk in Devices.Enumerate())Console.WriteLine("DEVICE: "+disk+" / "+disk.InstanceId);
+   foreach(var disk in Devices.Enumerate()){Console.WriteLine("DEVICE: "+disk+" / "+disk.InstanceId);var refreshed=Devices.RefreshTarget(disk);if(refreshed==null||refreshed.InstanceId!=disk.InstanceId||refreshed.Serial!=disk.Serial)throw new Exception("Targeted identity refresh failed");var wrong=new ExternalDisk {InstanceId=disk.InstanceId,Serial=disk.Serial+"WRONG",IsPortable=disk.IsPortable};if(Devices.RefreshTarget(wrong)!=null)throw new Exception("Targeted refresh accepted changed identity");}
    Console.WriteLine("PASS: device enumeration");return 0;
   }catch(Exception ex){Console.WriteLine("FAIL: "+ex);return 1;}
   finally{if(holder!=null){if(!holder.HasExited)holder.Kill();holder.Dispose();}if(File.Exists(filePath))File.Delete(filePath);}
