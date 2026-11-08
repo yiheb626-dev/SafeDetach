@@ -10,7 +10,7 @@ namespace SafeDetach {
   public uint Number;
   public bool IsPortable;
   public List<string> Drives = new List<string>();
-  public override string ToString() { return Name + "  [" + (IsPortable ? "手机 / 便携设备 · 无盘符" : string.Join(" / ", Drives.ToArray())) + "]"; }
+  public override string ToString() { return Name + "  [" + (IsPortable ? "移动设备 · 无盘符" : string.Join(" / ", Drives.ToArray())) + "]"; }
  }
  public static class Devices {
   public static List<ExternalDisk> Enumerate() {

@@ -6,7 +6,7 @@ namespace SafeDetach {
  public sealed class DeviceList:ListBox {
   public DeviceList(){DrawMode=DrawMode.OwnerDrawFixed;BorderStyle=BorderStyle.None;BackColor=Color.FromArgb(245,247,250);IntegralHeight=false;ItemHeight=78;}
   public static string Title(ExternalDisk disk){return (disk.Name??"外接设备").Replace(" SCSI Disk Device","").Replace(" USB Device","");}
-  public static string Detail(ExternalDisk disk){return disk.IsPortable?"手机 · USB":"外接存储 · "+(disk.Drives.Count==0?"无盘符":string.Join(" / ",disk.Drives.ToArray()));}
+  public static string Detail(ExternalDisk disk){return disk.IsPortable?"移动设备 · USB":"外接存储 · "+(disk.Drives.Count==0?"无盘符":string.Join(" / ",disk.Drives.ToArray()));}
   protected override void OnFontChanged(EventArgs e){base.OnFontChanged(e);ItemHeight=Math.Max(70,Font.Height*4);}
   protected override void OnDrawItem(DrawItemEventArgs e){
    if(e.Index<0||e.Index>=Items.Count)return;var disk=Items[e.Index] as ExternalDisk;if(disk==null)return;

@@ -20,6 +20,7 @@ try {
     $info=[Diagnostics.ProcessStartInfo]::new($fixtureFile)
     $info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardInput=$true
     $info.EnvironmentVariables['SAFEDETACH_FIXTURE_PHASES']='1'
+    $info.EnvironmentVariables['SAFEDETACH_FIXTURE_INSTANCE']=$phone.InstanceId
     $fixture=[Diagnostics.Process]::Start($info)
     foreach($phase in @('BEFORE','READY','CLOSED')) {
         $line=$fixture.StandardOutput.ReadLineAsync()

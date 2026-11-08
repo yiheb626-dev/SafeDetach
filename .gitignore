@@ -16,6 +16,8 @@ obj/
 *.user
 *.suo
 *.etl
+*.pcapng
+__pycache__/
 *.png
 /tests/*report*.json
 /tests/broker-providers.txt

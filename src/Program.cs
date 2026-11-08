@@ -10,8 +10,9 @@ namespace SafeDetach {
  static class Program {
   [STAThread] static int Main(string[] args) {
    Environment.CurrentDirectory=Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+   if(args.Length==2&&args[0]=="--apple-service")return AppleServiceScanner.Run(HandleScanner.Decode(args[1]));
    if(args.Length==3 && args[0]=="--handle-name")return HandleScanner.QuerySingle(int.Parse(args[1]),long.Parse(args[2]));
-   if(args.Length==2 && args[0]=="--portable") {try{string instance=HandleScanner.Decode(args[1]);var reference=PortableTargets.Reference(instance);foreach(var other in Devices.Enumerate())if(other.IsPortable&&other.InstanceId!=instance&&PortableTargets.Reference(other.InstanceId).Key==reference.Key)throw new InvalidOperationException("设备身份重复，无法区分手机。");HandleScanner.SelectedPortableIdentity=reference;return HandleScanner.Run(new[]{"WPD:"+reference.Key},true);}catch(Exception ex){Console.WriteLine("ERROR\t"+HandleScanner.Encode(ex.Message));return 1;}}
+   if(args.Length==2 && args[0]=="--portable") {try{string instance=HandleScanner.Decode(args[1]);var reference=PortableTargets.Reference(instance);foreach(var other in Devices.Enumerate())if(other.IsPortable&&other.InstanceId!=instance&&PortableTargets.Reference(other.InstanceId).Key==reference.Key)throw new InvalidOperationException("设备身份重复，无法区分移动设备。");HandleScanner.SelectedPortableIdentity=reference;return HandleScanner.Run(new[]{"WPD:"+reference.Key},true);}catch(Exception ex){Console.WriteLine("ERROR\t"+HandleScanner.Encode(ex.Message));return 1;}}
    if(args.Length>0 && args[0]=="--windows") {var roots=new string[args.Length-1];Array.Copy(args,1,roots,0,roots.Length);return WindowClueScanner.Run(roots);}
    if(args.Length>0 && args[0]=="--mapped") {var roots=new string[args.Length-1];Array.Copy(args,1,roots,0,roots.Length);return MappedFileScanner.Run(roots);}
    if(args.Length>0 && args[0]=="--scan") { var roots=new string[args.Length-1]; Array.Copy(args,1,roots,0,roots.Length); return HandleScanner.Run(roots); }
@@ -22,11 +23,12 @@ namespace SafeDetach {
   DeviceList disks=new DeviceList(); DataGridView table=new DataGridView(); TextBox status=new TextBox {Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.None,BorderStyle=BorderStyle.None,BackColor=Color.White,TabStop=false};
   Label deviceTitle=new Label(),deviceDetail=new Label(),processCount=new Label(),empty=new Label(); bool scanSucceeded;
   Button refresh=new Button(), scan=new Button(), eject=new Button(), elevate=new Button(); bool busy;
-  readonly bool autoScan; Process helper;bool closing;bool deviceChangePending;readonly Timer deviceTimer=new Timer {Interval=800};
+  readonly Panel npcapNotice=new Panel();readonly Label npcapTitle=new Label(),npcapDetail=new Label();readonly Button npcapDownload=new Button(),npcapRetry=new Button();TableLayoutPanel content;readonly Timer supportTimer=new Timer {Interval=1000};
+  readonly bool autoScan; AppleConnectionMonitor appleMonitor=new AppleConnectionMonitor();Process helper;bool closing;bool deviceChangePending;readonly Timer deviceTimer=new Timer {Interval=800};
   public MainWindow():this(true) {}
   public MainWindow(bool loadDevices) {
    autoScan=loadDevices;
-   AutoScaleDimensions=new SizeF(96,96); AutoScaleMode=AutoScaleMode.Dpi; Text="SafeDetach 1.3.1"; Size=new Size(1120,720); MinimumSize=new Size(940,560); StartPosition=FormStartPosition.CenterScreen;
+   AutoScaleDimensions=new SizeF(96,96); AutoScaleMode=AutoScaleMode.Dpi; Text="SafeDetach 1.4.1"; Size=new Size(1120,720); MinimumSize=new Size(940,560); StartPosition=FormStartPosition.CenterScreen;
    Font=new Font("Microsoft YaHei UI",10); BackColor=Color.White; ForeColor=Color.FromArgb(30,41,59);
    var shell=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Margin=Padding.Empty};shell.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,250));shell.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
    var sidebar=new TableLayoutPanel {Dock=DockStyle.Fill,Padding=new Padding(18,24,18,18),ColumnCount=1,RowCount=5,BackColor=Color.FromArgb(245,247,250),Margin=Padding.Empty};
@@ -38,28 +40,48 @@ namespace SafeDetach {
    StyleButton(elevate,"管理员模式",false,delegate {try {Process.Start(new ProcessStartInfo(Application.ExecutablePath){UseShellExecute=true,Verb="runas",WorkingDirectory=Environment.GetFolderPath(Environment.SpecialFolder.Windows)});Close();}catch(Exception ex){status.Text=ex.Message;}});elevate.Dock=DockStyle.Fill;sidebar.Controls.Add(elevate,0,3);
    elevate.Visible=!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
    StyleButton(refresh,"刷新设备",false,delegate {RefreshDevices();});refresh.Dock=DockStyle.Fill;sidebar.Controls.Add(refresh,0,4);
-   var content=new TableLayoutPanel {Dock=DockStyle.Fill,Padding=new Padding(28,26,28,20),RowCount=4,ColumnCount=1,Margin=Padding.Empty};content.RowStyles.Add(new RowStyle(SizeType.Absolute,86));content.RowStyles.Add(new RowStyle(SizeType.Absolute,52));content.RowStyles.Add(new RowStyle(SizeType.Percent,100));content.RowStyles.Add(new RowStyle(SizeType.Absolute,82));
+   content=new TableLayoutPanel {Dock=DockStyle.Fill,Padding=new Padding(28,26,28,20),RowCount=5,ColumnCount=1,Margin=Padding.Empty};content.RowStyles.Add(new RowStyle(SizeType.Absolute,86));content.RowStyles.Add(new RowStyle(SizeType.Absolute,0));content.RowStyles.Add(new RowStyle(SizeType.Absolute,52));content.RowStyles.Add(new RowStyle(SizeType.Percent,100));content.RowStyles.Add(new RowStyle(SizeType.Absolute,82));
    var heading=new TableLayoutPanel {Dock=DockStyle.Fill,RowCount=2,ColumnCount=1,Margin=Padding.Empty};heading.RowStyles.Add(new RowStyle(SizeType.Absolute,42));heading.RowStyles.Add(new RowStyle(SizeType.Percent,100));deviceTitle.Text="选择设备";deviceTitle.Font=new Font(Font.FontFamily,20,FontStyle.Bold);deviceTitle.Dock=DockStyle.Fill;deviceTitle.AutoEllipsis=true;deviceDetail.Dock=DockStyle.Fill;deviceDetail.ForeColor=Color.FromArgb(100,116,139);deviceDetail.Text="从左侧选择要管理的设备";heading.Controls.Add(deviceTitle,0,0);heading.Controls.Add(deviceDetail,0,1);content.Controls.Add(heading,0,0);
-   var tools=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Margin=Padding.Empty};tools.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));tools.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,124));processCount.Text="占用进程 · 0";processCount.Dock=DockStyle.Fill;processCount.TextAlign=ContentAlignment.MiddleLeft;processCount.Font=new Font(Font,FontStyle.Bold);tools.Controls.Add(processCount,0,0);StyleButton(scan,"扫描占用",false,delegate {Scan();});scan.Dock=DockStyle.Fill;tools.Controls.Add(scan,1,0);content.Controls.Add(tools,0,1);
+   npcapNotice.Name="npcapNotice";npcapNotice.Dock=DockStyle.Fill;npcapNotice.Margin=new Padding(0,0,0,10);npcapNotice.Padding=new Padding(12,8,12,8);npcapNotice.BackColor=Color.FromArgb(240,247,255);npcapNotice.Visible=false;
+   var supportLayout=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Margin=Padding.Empty};supportLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));supportLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,142));supportLayout.RowStyles.Add(new RowStyle(SizeType.Percent,100));
+   var supportText=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=2,Margin=Padding.Empty};supportText.RowStyles.Add(new RowStyle(SizeType.Absolute,24));supportText.RowStyles.Add(new RowStyle(SizeType.Percent,100));npcapTitle.Dock=DockStyle.Fill;npcapTitle.Font=new Font(Font,FontStyle.Bold);npcapTitle.Margin=Padding.Empty;npcapDetail.Dock=DockStyle.Fill;npcapDetail.Font=new Font(Font.FontFamily,9);npcapDetail.ForeColor=Color.FromArgb(71,85,105);npcapDetail.Margin=Padding.Empty;supportText.Controls.Add(npcapTitle,0,0);supportText.Controls.Add(npcapDetail,0,1);supportLayout.Controls.Add(supportText,0,0);
+   var supportActions=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=1,RowCount=2,Margin=new Padding(8,0,0,0)};supportActions.RowStyles.Add(new RowStyle(SizeType.Percent,50));supportActions.RowStyles.Add(new RowStyle(SizeType.Percent,50));StyleButton(npcapDownload,"前往官网下载",false,delegate {try{NpcapSupport.OpenDownloadPage();}catch(Exception ex){status.Text="无法打开浏览器："+ex.Message;}});StyleButton(npcapRetry,"安装后重试",false,delegate {RetryNpcap();});npcapDownload.Name="npcapDownload";npcapRetry.Name="npcapRetry";npcapDownload.Dock=npcapRetry.Dock=DockStyle.Fill;npcapDownload.Margin=npcapRetry.Margin=new Padding(0,1,0,1);npcapDownload.Font=npcapRetry.Font=new Font(Font.FontFamily,9);supportActions.Controls.Add(npcapDownload,0,0);supportActions.Controls.Add(npcapRetry,0,1);supportLayout.Controls.Add(supportActions,1,0);npcapNotice.Controls.Add(supportLayout);content.Controls.Add(npcapNotice,0,1);
+   var tools=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Margin=Padding.Empty};tools.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));tools.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,124));processCount.Text="占用进程 · 0";processCount.Dock=DockStyle.Fill;processCount.TextAlign=ContentAlignment.MiddleLeft;processCount.Font=new Font(Font,FontStyle.Bold);tools.Controls.Add(processCount,0,0);StyleButton(scan,"扫描占用",false,delegate {Scan();});scan.Dock=DockStyle.Fill;tools.Controls.Add(scan,1,0);content.Controls.Add(tools,0,2);
    table.ColumnHeadersHeightSizeMode=DataGridViewColumnHeadersHeightSizeMode.DisableResizing;table.ColumnHeadersHeight=42;table.AutoSizeRowsMode=DataGridViewAutoSizeRowsMode.None;table.RowTemplate.Height=46;table.Dock=DockStyle.Fill;table.ReadOnly=true;table.AllowUserToAddRows=false;table.AllowUserToDeleteRows=false;table.RowHeadersVisible=false;table.BackgroundColor=Color.White;table.BorderStyle=BorderStyle.None;table.CellBorderStyle=DataGridViewCellBorderStyle.SingleHorizontal;table.GridColor=Color.FromArgb(237,241,245);table.EnableHeadersVisualStyles=false;table.ColumnHeadersBorderStyle=DataGridViewHeaderBorderStyle.None;table.ColumnHeadersDefaultCellStyle.BackColor=Color.FromArgb(248,250,252);table.ColumnHeadersDefaultCellStyle.ForeColor=Color.FromArgb(100,116,139);table.ColumnHeadersDefaultCellStyle.Padding=new Padding(10,0,0,0);table.DefaultCellStyle.Padding=new Padding(10,0,0,0);table.DefaultCellStyle.SelectionBackColor=Color.FromArgb(233,245,241);table.DefaultCellStyle.SelectionForeColor=ForeColor;table.AutoSizeColumnsMode=DataGridViewAutoSizeColumnsMode.Fill;table.SelectionMode=DataGridViewSelectionMode.FullRowSelect;
    table.Columns.Add("name","程序 / 进程"); table.Columns.Add("pid","PID"); table.Columns.Add("path","占用内容");
    table.Columns[0].FillWeight=25; table.Columns[1].FillWeight=10; table.Columns[2].FillWeight=55;
    table.Columns.Add(new DataGridViewButtonColumn {Name="stop",HeaderText="",Text="结束进程",UseColumnTextForButtonValue=true,FlatStyle=FlatStyle.Flat,FillWeight=23});table.Columns[1].FillWeight=14;table.CellContentClick+=StopClicked;
    table.CellPainting+=delegate(object sender,DataGridViewCellPaintingEventArgs e){if(e.RowIndex>=0&&e.ColumnIndex==3){e.PaintBackground(e.ClipBounds,true);TextRenderer.DrawText(e.Graphics,"结束进程",Font,e.CellBounds,Color.FromArgb(170,65,47),TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);e.Handled=true;}};
-   var listHost=new Panel {Dock=DockStyle.Fill,Margin=Padding.Empty};listHost.Controls.Add(table);empty.Dock=DockStyle.Fill;empty.Text="尚未扫描\n选择设备后扫描占用";empty.TextAlign=ContentAlignment.MiddleCenter;empty.ForeColor=Color.FromArgb(148,163,184);empty.Font=new Font(Font.FontFamily,12);listHost.Controls.Add(empty);content.Controls.Add(listHost,0,2);
-   var footer=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Padding=new Padding(0,18,0,0),Margin=Padding.Empty};footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,150));status.Dock=DockStyle.Fill;status.Margin=new Padding(0,4,16,0);status.Text="正在读取设备…";status.ForeColor=Color.FromArgb(100,116,139);footer.Controls.Add(status,0,0);StyleButton(eject,"安全弹出",true,delegate {Eject();});eject.Dock=DockStyle.Top;eject.Height=46;footer.Controls.Add(eject,1,0);content.Controls.Add(footer,0,3);
+   var listHost=new Panel {Dock=DockStyle.Fill,Margin=Padding.Empty};listHost.Controls.Add(table);empty.Dock=DockStyle.Fill;empty.Text="尚未扫描\n选择设备后扫描占用";empty.TextAlign=ContentAlignment.MiddleCenter;empty.ForeColor=Color.FromArgb(148,163,184);empty.Font=new Font(Font.FontFamily,12);listHost.Controls.Add(empty);content.Controls.Add(listHost,0,3);
+   var footer=new TableLayoutPanel {Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Padding=new Padding(0,18,0,0),Margin=Padding.Empty};footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,150));status.Dock=DockStyle.Fill;status.Margin=new Padding(0,4,16,0);status.Text="正在读取设备…";status.ForeColor=Color.FromArgb(100,116,139);footer.Controls.Add(status,0,0);StyleButton(eject,"安全弹出",true,delegate {Eject();});eject.Dock=DockStyle.Top;eject.Height=46;footer.Controls.Add(eject,1,0);content.Controls.Add(footer,0,4);
    shell.Controls.Add(sidebar,0,0);shell.Controls.Add(content,1,0);Controls.Add(shell);table.RowsAdded+=delegate {UpdateResults();};table.RowsRemoved+=delegate {UpdateResults();};UpdateResults();Busy(false);
    deviceTimer.Tick+=delegate {if(!busy&&deviceChangePending){deviceChangePending=false;deviceTimer.Stop();RefreshDevices();}};
-   Shown+=delegate {if(loadDevices)RefreshDevices();}; FormClosing+=delegate {closing=true;deviceTimer.Stop();try{if(helper!=null&&!helper.HasExited)helper.Kill();}catch{}};FormClosed+=delegate{deviceTimer.Dispose();};
+   supportTimer.Tick+=delegate {UpdateNpcapNotice();};
+   Shown+=delegate {if(loadDevices){UpdateNpcapNotice();supportTimer.Start();appleMonitor.Start();RefreshDevices();}}; FormClosing+=delegate {closing=true;deviceTimer.Stop();supportTimer.Stop();try{if(helper!=null&&!helper.HasExited)helper.Kill();}catch{}};FormClosed+=delegate{deviceTimer.Dispose();supportTimer.Dispose();appleMonitor.Dispose();};
   }
-  protected override void WndProc(ref Message message) {base.WndProc(ref message);if(message.Msg==0x219&&!closing){deviceChangePending=true;deviceTimer.Start();}}
+  protected override void WndProc(ref Message message) {base.WndProc(ref message);if(message.Msg==0x219&&!closing){appleMonitor.InvalidateDevices();deviceChangePending=true;deviceTimer.Start();}}
   void StyleButton(Button button,string text,bool primary,EventHandler handler) {button.Text=text;button.FlatStyle=FlatStyle.Flat;button.FlatAppearance.BorderSize=primary?0:1;button.FlatAppearance.BorderColor=Color.FromArgb(220,227,234);button.BackColor=primary?Color.FromArgb(14,116,99):Color.White;button.ForeColor=primary?Color.White:ForeColor;button.Cursor=Cursors.Hand;button.Height=40;button.Margin=new Padding(0,4,0,4);button.Click+=handler;}
   void UpdateResults() {bool occupied=table.Rows.Count>0;eject.Text=occupied?"强制弹出":"安全弹出";eject.BackColor=occupied?Color.FromArgb(185,83,42):Color.FromArgb(14,116,99);processCount.Text="占用进程 · "+table.Rows.Count;empty.Visible=!occupied;}
-  void Busy(bool value) {busy=value;if(closing)return;refresh.Enabled=disks.Enabled=elevate.Enabled=!value;scan.Enabled=eject.Enabled=!value&&disks.SelectedItem!=null;UpdateResults();}
+  void Busy(bool value) {busy=value;if(closing)return;refresh.Enabled=disks.Enabled=elevate.Enabled=npcapRetry.Enabled=!value;scan.Enabled=eject.Enabled=!value&&disks.SelectedItem!=null;UpdateResults();}
+  void SetNpcapNotice(bool show,bool installed) {
+   npcapTitle.Text=installed?"Apple 连接监听需要检查":"启用 Apple 连接识别";
+   npcapDetail.Text=installed?"请检查 Npcap 安装或尝试管理员模式，然后点击重试。":"安装 Npcap 后可识别爱思等应用的设备连接。\n磁盘和 WPD 扫描仍可使用。";
+   npcapRetry.Text=installed?"重新启用识别":"安装后重试";
+   float height=show?CurrentAutoScaleDimensions.Height:0;if(content.RowStyles[1].Height!=height||npcapNotice.Visible!=show){content.SuspendLayout();content.RowStyles[1].Height=height;npcapNotice.Visible=show;content.ResumeLayout(true);}
+  }
+  void UpdateNpcapNotice(){if(closing)return;bool installed=NpcapSupport.IsInstalled;SetNpcapNotice(!installed||appleMonitor.CaptureUnavailable,installed);}
+  async void RetryNpcap() {
+   if(busy||closing)return;
+   if(!NpcapSupport.IsInstalled){SetNpcapNotice(true,false);status.Text="请从 Npcap 官网下载安装，完成后点击“安装后重试”。";return;}
+   Busy(true);status.Text="正在启用 Apple 连接识别…";var previous=appleMonitor;var replacement=new AppleConnectionMonitor();appleMonitor=replacement;bool success=false;
+   try {await Task.Factory.StartNew(delegate {previous.Dispose();replacement.Start();replacement.WaitForInitialization(4000);});if(closing)return;UpdateNpcapNotice();string failure=replacement.Status;success=failure==null;status.Text=success?"Apple 连接识别已启用，请重新连接应用后扫描。":failure;}
+   catch(Exception ex){if(!closing)status.Text="启用失败："+ex.Message;}finally{Busy(false);}
+   if(success&&!closing&&disks.SelectedItem!=null)await ScanCore();
+  }
   async void RefreshDevices() {
    if(busy)return;Busy(true);table.Rows.Clear();
    string selectedId=(disks.SelectedItem as ExternalDisk)==null?null:((ExternalDisk)disks.SelectedItem).InstanceId;
-   try {var items=await Task.Factory.StartNew(delegate {return Devices.Enumerate();});if(closing)return;disks.Items.Clear();foreach(var disk in items)disks.Items.Add(disk);if(items.Count>0){disks.SelectedIndex=0;foreach(var disk in items)if(disk.InstanceId==selectedId)disks.SelectedItem=disk;}else status.Text="未发现 USB 存储或手机设备。连接后会自动刷新，也可点击刷新设备。";}catch(Exception ex){if(!closing)status.Text="读取设备失败："+ex.Message;}finally{Busy(false);}if(autoScan&&!closing&&disks.SelectedItem!=null)Scan();
+   try {var items=await Task.Factory.StartNew(delegate {return Devices.Enumerate();});if(closing)return;disks.Items.Clear();foreach(var disk in items)disks.Items.Add(disk);if(items.Count>0){disks.SelectedIndex=0;foreach(var disk in items)if(disk.InstanceId==selectedId)disks.SelectedItem=disk;}else status.Text="未发现 USB 存储或移动设备设备。连接后会自动刷新，也可点击刷新设备。";}catch(Exception ex){if(!closing)status.Text="读取设备失败："+ex.Message;}finally{Busy(false);}if(autoScan&&!closing&&disks.SelectedItem!=null)Scan();
   }
   async void Scan() {
    await ScanCore();
@@ -74,7 +96,8 @@ namespace SafeDetach {
     ExternalDisk verified=null;foreach(var candidate in current)if(candidate.InstanceId==disk.InstanceId&&candidate.Serial==disk.Serial)verified=candidate;
     if(verified==null){status.Text="设备已断开，请刷新设备。";return;}disk=verified;
     if(!disk.IsPortable&&disk.Drives.Count==0){status.Text="设备没有盘符。";return;}
-    bool incomplete=false;int denied=0;string failure="";
+    bool incomplete=false;int denied=0;string failure="",note="";
+    if(disk.IsPortable){var selectedInstance=disk.InstanceId;var appleLines=await Task.Factory.StartNew(delegate {return appleMonitor.Scan(selectedInstance);});if(closing)return;foreach(string line in appleLines){var fields=line.Split('\t');if(fields[0]=="H"&&fields.Length==5)AddResult(fields);else if(fields[0]=="ERROR"){incomplete=true;failure=HandleScanner.Decode(fields[1]);}else if(fields[0]=="NOTE")note=HandleScanner.Decode(fields[1]);}}
     foreach(string mode in disk.IsPortable?new[]{"--portable"}:new[]{"--scan","--mapped"}) {
     if(closing)return;
     string phase=mode=="--scan"?"文件句柄":mode=="--mapped"?"文件映射":"设备连接";
@@ -98,7 +121,7 @@ namespace SafeDetach {
     }
     }
     scanSucceeded=!incomplete;empty.Text=incomplete?"扫描未完成\n请重试或以管理员模式运行":"没有检测到占用进程";
-    status.Text=incomplete?"扫描未完成："+(failure.Length>0?failure:"请重试。"):(table.Rows.Count==0?"未检测到占用进程。":"检测到 "+table.Rows.Count+" 个占用进程。")+(denied>0?" 部分进程无访问权限。":"");
+    status.Text=incomplete?"扫描未完成："+(failure.Length>0?failure:"请重试。"):(table.Rows.Count==0?"未检测到占用进程。":"检测到 "+table.Rows.Count+" 个占用进程。")+(denied>0?" 部分进程无访问权限。":"")+(table.Rows.Count==0&&note.Length>0?" "+note:"");
    }catch(Exception ex){if(!closing)status.Text="扫描失败："+ex.Message;}finally{helper=null;Busy(false);}
   }
   void AddResult(string[] fields) {
@@ -128,9 +151,3 @@ namespace SafeDetach {
   }
  }
 }
-
-
-
-
-
-

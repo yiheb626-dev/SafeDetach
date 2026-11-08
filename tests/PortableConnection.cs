@@ -36,7 +36,9 @@ class PortableConnection {
    ((DeviceManager)manager).GetDevices(IntPtr.Zero,ref count);if(count==0)throw new Exception("No portable devices");
    ids=Marshal.AllocCoTaskMem((int)count*IntPtr.Size);for(int i=0;i<count;i++)Marshal.WriteIntPtr(ids,i*IntPtr.Size,IntPtr.Zero);
    ((DeviceManager)manager).GetDevices(ids,ref count);string target=null;
-   for(int i=0;i<count;i++){string id=Marshal.PtrToStringUni(Marshal.ReadIntPtr(ids,i*IntPtr.Size));if(id.IndexOf("vid_05ac",StringComparison.OrdinalIgnoreCase)>=0)target=id;}
+   string requestedTarget=Environment.GetEnvironmentVariable("SAFEDETACH_FIXTURE_INSTANCE");
+   for(int i=0;i<count;i++){string id=Marshal.PtrToStringUni(Marshal.ReadIntPtr(ids,i*IntPtr.Size));if(id.IndexOf("vid_05ac",StringComparison.OrdinalIgnoreCase)<0)continue;
+    if(string.IsNullOrEmpty(requestedTarget)){target=id;continue;}string normalized=id.Replace('#','\\');if(normalized.StartsWith("\\\\?\\",StringComparison.Ordinal))normalized=normalized.Substring(4);if(normalized.Equals(requestedTarget,StringComparison.OrdinalIgnoreCase)||normalized.StartsWith(requestedTarget+"\\",StringComparison.OrdinalIgnoreCase)){target=id;break;}}
    if(target==null)throw new Exception("No Apple WPD interface");
    values=Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("0C15D503-D017-47CE-9016-7B3F978721CC")));
    var access=new PropertyKey {Format=new Guid("204D9F0C-2292-4080-9F42-40664E70F859"),Id=9};((DeviceValues)values).SetUnsignedIntegerValue(ref access,0x80000000);
