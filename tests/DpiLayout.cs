@@ -19,6 +19,12 @@ class DpiLayout {
   var title=Field<Label>(form,"deviceTitle");Check(title.Height>=title.Font.Height,"Device heading clipped");var brand=(Label)form.Controls.Find("brandName",true)[0];Check(brand.Height>=brand.Font.Height*2,"Brand text clipped");
   var panel=Field<Panel>(form,"npcapNotice");Check(panel.Visible==notice,"Notice visibility mismatch");
   if(notice){var bounds=panel.RectangleToScreen(panel.ClientRectangle);foreach(string name in new[]{"npcapDownload","npcapRetry"}){var button=Field<Button>(form,name);Check(bounds.Contains(button.RectangleToScreen(button.ClientRectangle)),"Support actions clipped");}}
+  var count=Field<Label>(form,"processCount");var spinner=Field<ScanSpinner>(form,"scanSpinner");spinner.Running=true;form.PerformLayout();Application.DoEvents();
+  Check(spinner.Visible&&spinner.Width==ui.Px(18)&&spinner.Height==ui.Px(18),"Spinner size/visibility incorrect");
+  Check(spinner.Left>=count.Right+ui.Px(8)&&spinner.Left<=count.Right+ui.Px(8)+1,"Spinner is not beside process count");
+  Check(count.Parent.ClientRectangle.Contains(count.Bounds)&&spinner.Parent.ClientRectangle.Contains(spinner.Bounds),"Count/spinner clipped");
+  Check(count.Parent.Parent.ClientRectangle.Contains(count.Parent.Bounds),"Count group overflows toolbar");
+  Check(Math.Abs(spinner.Top+spinner.Height/2-count.Parent.ClientSize.Height/2)<=1,"Spinner not vertically centered");
   Buttons(form);
  }
  static void Save(MainWindow form,string directory,int dpi,string state){if(directory==null)return;using(var image=new Bitmap(form.Width,form.Height)){form.DrawToBitmap(image,new Rectangle(Point.Empty,form.Size));image.Save(Path.Combine(directory,"dpi-"+dpi+"-"+state+".png"));}}

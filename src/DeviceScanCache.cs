@@ -4,8 +4,8 @@ using System.Text;
 
 namespace SafeDetach {
  public sealed class DeviceScanSnapshot {
-  public readonly string[][] Rows;public readonly bool Completed;public readonly string Status,EmptyText;public readonly DateTime Updated;
-  public DeviceScanSnapshot(IEnumerable<string[]> rows,bool completed,string status,string emptyText,DateTime? updated=null){var copy=new List<string[]>();foreach(var row in rows)copy.Add((string[])row.Clone());Rows=copy.ToArray();Completed=completed;Status=status;EmptyText=emptyText;Updated=updated??DateTime.UtcNow;}
+  public readonly string[][] Rows;public readonly bool Completed,HasError;public readonly string Status,EmptyText;public readonly DateTime Updated;
+  public DeviceScanSnapshot(IEnumerable<string[]> rows,bool completed,string status,string emptyText,DateTime? updated=null,bool hasError=false){var copy=new List<string[]>();foreach(var row in rows)copy.Add((string[])row.Clone());Rows=copy.ToArray();Completed=completed;HasError=hasError;Status=status;EmptyText=emptyText;Updated=updated??DateTime.UtcNow;}
  }
  // All access is on the UI thread. Workers only write to their own output queue.
  public sealed class DeviceScanCache {
@@ -22,7 +22,7 @@ namespace SafeDetach {
   public bool Preview(Ticket ticket,DeviceScanSnapshot snapshot){if(!IsCurrent(ticket))return false;var entry=(Entry)ticket.Entry;if(entry.Visible==null||entry.LastGood==null)entry.Visible=snapshot;return true;}
   public bool Finish(Ticket ticket,DeviceScanSnapshot snapshot){bool current=IsCurrent(ticket);if(object.ReferenceEquals(active,ticket))active=null;if(!current)return false;var entry=(Entry)ticket.Entry;
    if(snapshot.Completed){entry.Visible=entry.LastGood=snapshot;}
-   else if(entry.LastGood!=null)entry.Visible=new DeviceScanSnapshot(entry.LastGood.Rows,false,snapshot.Status+" 保留上次完整结果。",snapshot.EmptyText,entry.LastGood.Updated);
+   else if(entry.LastGood!=null)entry.Visible=new DeviceScanSnapshot(entry.LastGood.Rows,false,snapshot.Status+" 保留上次完整结果。",snapshot.EmptyText,entry.LastGood.Updated,snapshot.HasError);
    else entry.Visible=snapshot;return true;
   }
   public void Remove(string key){if(key!=null&&entries.Remove(key))generation++;}

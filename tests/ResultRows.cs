@@ -13,7 +13,15 @@ class ResultRows {
    var eject=(Button)typeof(MainWindow).GetField("eject",flags).GetValue(form);
    var disk=new ExternalDisk {Name="Lexar ES3",InstanceId="fixture-es3",Serial="fixture"};disk.Drives.Add("H:");list.Items.Add(disk);list.Items.Add(new ExternalDisk {Name="Apple iPhone",IsPortable=true,InstanceId="fixture-phone"});list.SelectedIndex=0;
    if(eject.Text!="安全弹出")throw new Exception("Empty list must show safe eject");
-   if(args.Length==1){form.ShowInTaskbar=false;form.StartPosition=FormStartPosition.Manual;form.Location=new Point(-30000,-30000);form.Show();}
+   form.ShowInTaskbar=false;form.StartPosition=FormStartPosition.Manual;form.Location=new Point(-30000,-30000);form.Show();
+   var render=typeof(MainWindow).GetMethod("RenderSnapshot",flags);var footer=(TextBox)typeof(MainWindow).GetField("status",flags).GetValue(form);
+   render.Invoke(form,new object[]{new DeviceScanSnapshot(new string[0][],true,"部分进程无访问权限。（结果时间 10:05:10）","none")});
+   if(footer.Visible||footer.Text.Length!=0)throw new Exception("Normal footer must be hidden");
+   render.Invoke(form,new object[]{new DeviceScanSnapshot(new string[0][],false,"扫描失败：fixture","failed",hasError:true)});
+   if(!footer.Visible||footer.Text!="扫描失败：fixture")throw new Exception("Error footer missing");
+   render.Invoke(form,new object[]{new DeviceScanSnapshot(new string[0][],false,"正在扫描…","scanning")});
+   if(footer.Visible||footer.Text.Length!=0)throw new Exception("Non-error incomplete status is visible");
+   Console.WriteLine("PASS: footer appears only for explicit errors and clears on retry");
    var add=typeof(MainWindow).GetMethod("AddResult",BindingFlags.Instance|BindingFlags.NonPublic);
    var table=(DataGridView)typeof(MainWindow).GetField("table",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(form);
    Action<string,string> insert=delegate(string start,string path) {add.Invoke(form,new object[]{new[]{"H","1234",start,HandleScanner.Encode("TestViewer"),HandleScanner.Encode(path)}});};
